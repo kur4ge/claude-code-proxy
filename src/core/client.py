@@ -6,6 +6,7 @@ from openai import AsyncOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai._exceptions import APIError, RateLimitError, AuthenticationError, BadRequestError
 import langwatch
+from langwatch.domain import ChatMessage
 
 class OpenAIClient:
     """Async OpenAI client with cancellation support."""
@@ -30,7 +31,6 @@ class OpenAIClient:
             )
         self.active_requests: Dict[str, asyncio.Event] = {}
 
-    @langwatch.trace()
     async def create_chat_completion(self, request: Dict[str, Any], request_id: Optional[str] = None) -> Dict[str, Any]:
         """Send chat completion to OpenAI API with cancellation support."""
         
@@ -90,7 +90,6 @@ class OpenAIClient:
             if request_id and request_id in self.active_requests:
                 del self.active_requests[request_id]
 
-    @langwatch.trace()
     async def create_chat_completion_stream(self, request: Dict[str, Any], request_id: Optional[str] = None) -> AsyncGenerator[str, None]:
         """Send streaming chat completion to OpenAI API with cancellation support."""
         
@@ -105,22 +104,56 @@ class OpenAIClient:
             if "stream_options" not in request:
                 request["stream_options"] = {}
             request["stream_options"]["include_usage"] = True
-            
             # Create the streaming completion
-            streaming_completion = await self.client.chat.completions.create(**request)
-            
-            async for chunk in streaming_completion:
-                # Check for cancellation before yielding each chunk
-                if request_id and request_id in self.active_requests:
-                    if self.active_requests[request_id].is_set():
-                        raise HTTPException(status_code=499, detail="Request cancelled by client")
-                
-                # Convert chunk to SSE format matching original HTTP client format
-                chunk_dict = chunk.model_dump()
-                chunk_json = json.dumps(chunk_dict, ensure_ascii=False)
-                yield f"data: {chunk_json}"
-            
-            # Signal end of stream
+            async with langwatch.trace(name="Claude Code Query Handling", metadata={"request_id": request_id}) as trace:
+                async with langwatch.span(type="llm", name="[User]Input") as llm_span:
+                    llm_span.update(
+                        input=request['messages'],
+                    )
+
+                streaming_completion = await self.client.chat.completions.create(**request)
+                llm_output = {}
+                # role: content
+                llm_output_reasoning = {}
+                # role: content
+
+                async for chunk in streaming_completion:
+                    # Check for cancellation before yielding each chunk
+                    if request_id and request_id in self.active_requests:
+                        if self.active_requests[request_id].is_set():
+                            raise HTTPException(status_code=499, detail="Request cancelled by client")
+                    
+                    # Convert chunk to SSE format matching original HTTP client format
+                    chunk_dict = chunk.model_dump()
+                    # Logging
+                    for choice in chunk_dict.get("choices", []):
+                        delta = choice.get('delta', {})
+                        content = delta.get('content', "")
+                        role = delta.get("role", "unknown")
+                        reasoning_content = delta.get('reasoning_content', "")
+                        if content != "":
+                            if role not in llm_output:
+                                llm_output[role] = ''
+                            llm_output[role] += content
+                        if reasoning_content != "":
+                            if role not in llm_output_reasoning:
+                                llm_output_reasoning[role] = ''
+                            llm_output_reasoning[role] += reasoning_content
+                        break
+                    chunk_json = json.dumps(chunk_dict, ensure_ascii=False)
+                    yield f"data: {chunk_json}"
+                for role, content in llm_output_reasoning.items():
+                    async with langwatch.span(type="llm", name=f"[{role}]Reasoning") as llm_span:
+                        llm_span.update(
+                            output=[ChatMessage(role=role, content=content)]
+                        )
+                for role, content in llm_output.items():
+                    async with langwatch.span(type="llm", name=f"[{role}]Output") as llm_span:
+                        llm_span.update(
+                            output=[ChatMessage(role=role, content=content)]
+                        )
+                # print(len(llm_output))
+                    # Signal end of stream
             yield "data: [DONE]"
                 
         except AuthenticationError as e:

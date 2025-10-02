@@ -4,6 +4,12 @@ from datetime import datetime
 import uuid
 from typing import Optional
 
+import langwatch
+from langwatch.attributes import AttributeKey
+from langwatch.domain import SpanProcessingExcludeRule
+from opentelemetry.instrumentation.openai import OpenAIInstrumentor # Example instrumentor
+import os
+
 from src.core.config import config
 from src.core.logging import logger
 from src.core.client import OpenAIClient
@@ -16,6 +22,20 @@ from src.conversion.response_converter import (
 from src.core.model_manager import model_manager
 
 router = APIRouter()
+
+langwatch.setup(
+    api_key=os.getenv("LANGWATCH_API_KEY"),
+    endpoint_url=os.getenv("LANGWATCH_ENDPOINT"), # Optional: Defaults to env var or cloud
+    base_attributes={
+        AttributeKey.ServiceName: "claude-code-proxy",
+        AttributeKey.ServiceVersion: "1.0.0",
+        # Add other custom attributes here
+    },
+    instrumentors=[OpenAIInstrumentor()], # Optional: List of instrumentors that conform to the `Instrumentor` protocol
+    debug=False, # Optional: Enable debug logging
+    span_exclude_rules=[], # Optional: Rules to exclude spans
+)
+
 
 openai_client = OpenAIClient(
     config.openai_api_key,

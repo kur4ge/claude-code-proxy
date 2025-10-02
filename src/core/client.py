@@ -5,6 +5,7 @@ from typing import Optional, AsyncGenerator, Dict, Any
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai._exceptions import APIError, RateLimitError, AuthenticationError, BadRequestError
+import langwatch
 
 class OpenAIClient:
     """Async OpenAI client with cancellation support."""
@@ -28,7 +29,8 @@ class OpenAIClient:
                 timeout=timeout
             )
         self.active_requests: Dict[str, asyncio.Event] = {}
-    
+
+    @langwatch.trace()
     async def create_chat_completion(self, request: Dict[str, Any], request_id: Optional[str] = None) -> Dict[str, Any]:
         """Send chat completion to OpenAI API with cancellation support."""
         
@@ -87,7 +89,8 @@ class OpenAIClient:
             # Clean up active request tracking
             if request_id and request_id in self.active_requests:
                 del self.active_requests[request_id]
-    
+
+    @langwatch.trace()
     async def create_chat_completion_stream(self, request: Dict[str, Any], request_id: Optional[str] = None) -> AsyncGenerator[str, None]:
         """Send streaming chat completion to OpenAI API with cancellation support."""
         

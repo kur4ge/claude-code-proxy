@@ -28,6 +28,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
     "openai>=1.54.0",
+    "langwatch>=0.2.10",
+    "opentelemetry-instrumentation-openai>=0.47.3",
 ]
 
 [project.optional-dependencies]

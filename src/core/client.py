@@ -5,6 +5,7 @@ from typing import Optional, AsyncGenerator, Dict, Any
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai._exceptions import APIError, RateLimitError, AuthenticationError, BadRequestError
+from src.models.claude import ClaudeMessagesRequest
 import langwatch
 from langwatch.domain import ChatMessage
 
@@ -90,7 +91,7 @@ class OpenAIClient:
             if request_id and request_id in self.active_requests:
                 del self.active_requests[request_id]
 
-    async def create_chat_completion_stream(self, request: Dict[str, Any], request_id: Optional[str] = None) -> AsyncGenerator[str, None]:
+    async def create_chat_completion_stream(self, request: Dict[str, Any], claude_request: ClaudeMessagesRequest, request_id: Optional[str] = None) -> AsyncGenerator[str, None]:
         """Send streaming chat completion to OpenAI API with cancellation support."""
         
         # Create cancellation token if request_id provided
@@ -105,7 +106,7 @@ class OpenAIClient:
                 request["stream_options"] = {}
             request["stream_options"]["include_usage"] = True
             # Create the streaming completion
-            async with langwatch.trace(name="Claude Code Query Handling", metadata={"request_id": request_id}) as trace:
+            async with langwatch.trace(name="Claude Code Query Handling", metadata=claude_request.metadata) as trace:
                 async with langwatch.span(type="llm", name="[User]Input") as llm_span:
                     llm_span.update(
                         input=request['messages'],

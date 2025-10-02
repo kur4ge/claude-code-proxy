@@ -10,3 +10,5 @@ httpx>=0.25.0
 black>=23.0.0
 isort>=5.12.0
 mypy>=1.0.0
+langwatch>=0.2.10
+opentelemetry-instrumentation-openai>=0.47.3
